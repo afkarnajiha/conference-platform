@@ -1,0 +1,5 @@
+project_id = "successful-ideas-conferences"
+
+[functions.manage-account]
+# JWT is explicitly verified with auth.getUser in the handler.
+verify_jwt = false
