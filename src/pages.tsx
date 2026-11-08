@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EmployeeImport } from "./EmployeeImport";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowUpLeft,
@@ -625,6 +626,7 @@ export function Exhibitions() {
 }
 
 export function Team() {
+  const [importOpen, setImportOpen] = useState(false);
   const s = useConferenceData(),
     [edit, setEdit] = useState<Row | null>(null),
     [action, setAction] = useState<{ person: Row; type: string } | null>(null);
@@ -646,6 +648,11 @@ export function Team() {
         description="حسابات واضحة الصلاحيات، ومشاركة ميدانية منظّمة."
       >
         {manage && (
+          <button className="button" onClick={() => setImportOpen(true)}>
+            استيراد Excel
+          </button>
+        )}
+        {manage && (
           <button
             className="button primary"
             onClick={() => setEdit({ ...blank })}
@@ -655,6 +662,9 @@ export function Team() {
           </button>
         )}
       </Heading>
+      {manage && importOpen && (
+        <EmployeeImport onClose={() => setImportOpen(false)} />
+      )}
       <DataTable
         rows={s.data.profiles.map((p) => ({
           ...p,

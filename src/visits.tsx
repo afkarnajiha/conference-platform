@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { Html5Qrcode } from "html5-qrcode";
 import { client, errorText, rpc } from "./api";
+import { captureAttachments } from "./attachment-selection";
 import { useStore } from "./store";
 import { NeedConference, useConferenceData, VisitTable } from "./pages";
 import {
@@ -392,6 +393,7 @@ function VisitForm({
   visit?: Row;
   onSaved: (id: string) => void;
 }) {
+  const [selecting, setSelecting] = useState(false);
   const s = useStore(),
     opp = s.data.commercial_opportunities.find((o) => o.visit_id === visit?.id),
     [value, setValue] = useState<VisitInput>(() =>
@@ -433,13 +435,12 @@ function VisitForm({
   async function selectFiles(selected: FileList | null) {
     if (!selected) return;
     setErr("");
+    setSelecting(true);
     try {
-      if (files.length + selected.length > 10)
-        throw new Error("الحد الأقصى عشرة مرفقات للزيارة.");
-      await Promise.all(Array.from(selected).map(validateFile));
+      const captured = await captureAttachments(selected, files.length);
       setFiles((prev) => [
         ...prev,
-        ...Array.from(selected).map((file) => ({
+        ...captured.map((file) => ({
           file,
           url: URL.createObjectURL(file),
         })),
@@ -447,6 +448,8 @@ function VisitForm({
       dirty.current = true;
     } catch (e) {
       setErr(errorText(e));
+    } finally {
+      setSelecting(false);
     }
   }
   async function save() {
@@ -514,7 +517,7 @@ function VisitForm({
   return (
     <Form onSave={save} className="visit-form">
       {(busy) => (
-        <fieldset disabled={busy}>
+        <fieldset disabled={busy || selecting}>
           <section className="panel">
             <div className="section-head">
               <h2>معلومات المعرض</h2>
