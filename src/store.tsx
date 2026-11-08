@@ -64,7 +64,11 @@ function useStateStore() {
     setLoading(true);
     const gen = generation.current;
     try {
-      const results = await Promise.all(tables.map(allRows));
+      const results = await Promise.all(
+        tables.map((t) =>
+          t === "visit_reservations" ? Promise.resolve([]) : allRows(t),
+        ),
+      );
       if (gen === generation.current) {
         setData(
           Object.fromEntries(tables.map((t, i) => [t, results[i]])) as Data,

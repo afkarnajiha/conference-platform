@@ -184,8 +184,8 @@ export function ScanPage() {
           {unknown ? (
             <>
               <p>
-                راجع بيانات المعرض قبل إنشائه. يمكن للمشرف ربط الرمز بمعرض
-                موجود.
+                أدخل اسم المعرض والجهة، أو اربط الرمز بمعرض موجود، ثم أكمل
+                بيانات الزيارة مباشرة.
               </p>
               <Form
                 onSave={async () => {
@@ -206,21 +206,19 @@ export function ScanPage() {
               >
                 {(saving) => (
                   <>
-                    {s.profile?.role !== "employee" && (
-                      <Field label="ربط بمعرض موجود (اختياري)">
-                        <select
-                          value={existing}
-                          onChange={(e) => setExisting(e.target.value)}
-                        >
-                          <option value="">إنشاء معرض جديد</option>
-                          {s.exhibitions.map((e) => (
-                            <option key={e.id} value={e.id}>
-                              {e.name} — {e.organization}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                    )}
+                    <Field label="ربط بمعرض موجود (اختياري)">
+                      <select
+                        value={existing}
+                        onChange={(e) => setExisting(e.target.value)}
+                      >
+                        <option value="">إنشاء معرض جديد</option>
+                        {s.exhibitions.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.name} — {e.organization}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
                     {!existing && (
                       <>
                         <Field label="اسم المعرض" required>
@@ -243,12 +241,7 @@ export function ScanPage() {
                         </Field>
                       </>
                     )}
-                    {s.profile?.role === "employee" && (
-                      <p className="help">
-                        سيُرسل السجل لمراجعة المشرف قبل السماح بالزيارة. إذا كان
-                        المعرض موجودًا، اطلب من المشرف ربط الرمز به.
-                      </p>
-                    )}
+
                     <Submit busy={saving}>
                       {existing ? "ربط الرمز بالمعرض" : "إنشاء سجل المعرض"}
                     </Submit>
@@ -263,8 +256,10 @@ export function ScanPage() {
                 <span>نتحقق من سجل المعرض على مستوى الشركة.</span>
               </li>
               <li>
-                <b>حجز وقت لتسجيل البيانات</b>
-                <span>حجز لمدة 20 دقيقة يمنع بدء زيارة متزامنة.</span>
+                <b>تعبئة بيانات الزيارة</b>
+                <span>
+                  أكمل بيانات المسؤول والفرص والمرفقات دون مهلة زمنية.
+                </span>
               </li>
               <li>
                 <b>توثيق الفرصة وحفظ الزيارة</b>
@@ -278,157 +273,50 @@ export function ScanPage() {
   );
 }
 
-type Reservation = {
-  status: string;
-  token?: string;
-  expires_at?: string;
-  employee?: string;
-  visited_at?: string;
-  visit_id?: string;
-};
 export function VisitPage() {
   const { id } = useParams(),
     s = useConferenceData(),
-    navigate = useNavigate(),
-    [reservation, setReservation] = useState<Reservation | null>(null),
-    [err, setErr] = useState(""),
-    [reload, setReload] = useState(0),
-    [now, setNow] = useState(Date.now());
+    navigate = useNavigate();
   const exhibition = s.data.exhibitions.find((e) => e.id === id);
-  useEffect(() => {
-    let alive = true;
-    setReservation(null);
-    setErr("");
-    rpc<Reservation>("reserve_exhibition", { p_exhibition: id })
-      .then((r) => {
-        if (alive) setReservation(r);
-      })
-      .catch((e) => {
-        if (alive) setErr(errorText(e));
-      });
-    return () => {
-      alive = false;
-    };
-  }, [id, reload]);
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  if (err)
-    return (
-      <Empty title={err} text="يمكنك إعادة المحاولة بعد التحقق من الاتصال.">
-        <button className="button" onClick={() => setReload(reload + 1)}>
-          إعادة المحاولة
+  if (!exhibition)
+    return s.loading ? (
+      <Loading />
+    ) : (
+      <Empty title="المعرض غير متاح" text="حدّث البيانات ثم حاول مرة أخرى.">
+        <button className="button" onClick={() => void s.refresh()}>
+          تحديث البيانات
         </button>
       </Empty>
     );
-  if (!reservation) return <Loading />;
-  const expires = Date.parse(reservation.expires_at || ""),
-    expired = now >= expires;
-  if (reservation.status !== "accepted")
+  const completed = s.data.visits.find(
+    (v) => v.exhibition_id === id && v.visit_round === exhibition.visit_round,
+  );
+  if (completed)
     return (
-      <section className="panel reservation-result">
-        <CheckCircle2 size={42} />
-        <h1>
-          {reservation.status === "completed"
-            ? "تمت زيارة هذا المعرض مسبقًا"
-            : reservation.status === "reserved"
-              ? "المعرض قيد التسجيل من موظف آخر"
-              : "المعرض يحتاج إلى مراجعة"}
-        </h1>
-        {reservation.employee && (
-          <p>
-            اسم الموظف: <b>{reservation.employee}</b>
-          </p>
-        )}
-        {reservation.visited_at && (
-          <p>تاريخ الزيارة: {saDate(reservation.visited_at)}</p>
-        )}
-        {reservation.status === "reserved" && (
-          <p>ينتهي الحجز: {saDate(reservation.expires_at!)}</p>
-        )}
-        {reservation.status === "review" && (
-          <p>يعتمد المشرف بيانات المعرض قبل بدء الزيارة.</p>
-        )}
-        <div className="actions">
-          {reservation.visit_id && (
-            <Link
-              className="button primary"
-              to={"/visit/" + reservation.visit_id}
-            >
-              تفاصيل الزيارة
-            </Link>
-          )}
-          <button className="button" onClick={() => setReload(reload + 1)}>
-            إعادة التحقق
-          </button>
-          <Link className="button ghost" to="/scan">
-            العودة للمسح
-          </Link>
-        </div>
+      <section className="panel">
+        <h1>تمت زيارة هذا المعرض مسبقًا</h1>
+        <p>اسم الموظف: {s.name(completed.employee_id)}</p>
+        <p>تاريخ الزيارة: {saDate(completed.visited_at)}</p>
+        <Link className="button primary" to={"/visit/" + completed.id}>
+          تفاصيل الزيارة
+        </Link>
       </section>
     );
   return (
     <>
       <Heading
         title="تسجيل زيارة جديدة"
-        description={
-          exhibition
-            ? `${exhibition.name} · ${exhibition.organization}`
-            : "سجل بيانات الجهة والفرص المحتملة."
-        }
-      >
-        <Link className="button ghost" to="/exhibitions">
-          <ArrowRight size={17} />
-          المعارض
-        </Link>
-      </Heading>
-      <div className="reservation-bar" role="status">
-        <Clock size={19} />
-        <span>
-          {expired
-            ? "انتهت مهلة الحجز. احتفظ بمحتوى النموذج ثم أعد الحجز قبل الحفظ."
-            : `المعرض محجوز لك · متبقي ${Math.max(0, Math.ceil((expires - now) / 60000))} دقيقة`}
-        </span>
-        <button
-          className="text-button"
-          onClick={() =>
-            void s.run(async () => {
-              await rpc("release_reservation", {
-                p_exhibition: id,
-                p_token: reservation.token,
-              });
-              navigate("/scan");
-            }, "تم تحرير الحجز")
-          }
-        >
-          إلغاء وتحرير الحجز
-        </button>
-      </div>
-      <VisitForm
-        exhibition={exhibition}
-        token={reservation.token}
-        disabled={expired}
-        onSaved={(v) => navigate("/visit/" + v)}
+        description={exhibition.name + " · " + exhibition.organization}
       />
-      {expired && (
-        <button
-          className="button primary"
-          onClick={() =>
-            void s.run(async () => {
-              const r = await rpc<Reservation>("reserve_exhibition", {
-                p_exhibition: id,
-              });
-              setReservation(r);
-            }, "تم التحقق من الحجز")
-          }
-        >
-          إعادة حجز المعرض
-        </button>
-      )}
+      <VisitForm
+        key={id}
+        exhibition={exhibition}
+        onSaved={(id) => navigate("/visit/" + id)}
+      />
     </>
   );
 }
+
 const fields: {
   key: keyof VisitInput;
   label: string;
@@ -497,15 +385,11 @@ const fields: {
 type LocalFile = { file: File; url: string };
 function VisitForm({
   exhibition,
-  token,
   visit,
-  disabled = false,
   onSaved,
 }: {
   exhibition?: Row;
-  token?: string;
   visit?: Row;
-  disabled?: boolean;
   onSaved: (id: string) => void;
 }) {
   const s = useStore(),
@@ -523,6 +407,7 @@ function VisitForm({
     [files, setFiles] = useState<LocalFile[]>([]),
     [err, setErr] = useState(""),
     [progress, setProgress] = useState("");
+  const [round] = useState(exhibition?.visit_round);
   const fileRef = useRef<LocalFile[]>([]);
   useEffect(() => {
     fileRef.current = files;
@@ -586,11 +471,10 @@ function VisitForm({
         onSaved(visit.id);
         return;
       }
-      if (!exhibition || !token)
-        throw new Error("الحجز غير متاح. أعد فتح المعرض.");
+      if (!exhibition || !round) throw new Error("المعرض غير متاح. أعد فتحه.");
       for (const [i, item] of files.entries()) {
         setProgress(`جارٍ رفع المرفق ${i + 1} من ${files.length}…`);
-        const path = `${s.profile!.id}/${exhibition.id}/${token}/${crypto.randomUUID()}.${mimeExtensions[item.file.type]}`;
+        const path = `${s.profile!.id}/${exhibition.id}/${round}/${crypto.randomUUID()}.${mimeExtensions[item.file.type]}`;
         const { error } = await client()
           .storage.from("visit-files")
           .upload(path, item.file, {
@@ -598,9 +482,7 @@ function VisitForm({
             upsert: false,
           });
         if (error)
-          throw new Error(
-            "فشل رفع ملف. تحقق من الاتصال وصلاحية الحجز ثم حاول مجددًا.",
-          );
+          throw new Error("فشل رفع ملف. تحقق من الاتصال ثم حاول مجددًا.");
         uploaded.push({
           path,
           name: item.file.name,
@@ -608,10 +490,10 @@ function VisitForm({
           size: item.file.size,
         });
       }
-      setProgress("جارٍ اعتماد الزيارة…");
-      const id = await rpc<string>("save_visit", {
+      setProgress("جارٍ حفظ الزيارة…");
+      const id = await rpc<string>("save_visit_direct", {
         p_exhibition: exhibition.id,
-        p_token: token,
+        p_round: round,
         p_data: checked.data,
         p_files: uploaded,
       });
@@ -632,11 +514,11 @@ function VisitForm({
   return (
     <Form onSave={save} className="visit-form">
       {(busy) => (
-        <fieldset disabled={busy || disabled}>
+        <fieldset disabled={busy}>
           <section className="panel">
             <div className="section-head">
               <h2>معلومات المعرض</h2>
-              <Badge>{visit ? "زيارة مكتملة" : "حجز مؤقت"}</Badge>
+              <Badge>{visit ? "زيارة مكتملة" : "زيارة جديدة"}</Badge>
             </div>
             <div className="form-grid">
               <Field label="اسم المعرض">

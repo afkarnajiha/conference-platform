@@ -83,11 +83,6 @@ export function Dashboard() {
         exhibitionStatus(e, s.visits, s.data.visit_reservations) ===
         "لم تتم الزيارة",
     ).length,
-    reserved = s.exhibitions.filter(
-      (e) =>
-        exhibitionStatus(e, s.visits, s.data.visit_reservations) ===
-        "قيد التسجيل",
-    ).length,
     ratio = s.exhibitions.length
       ? Math.round((completed / s.exhibitions.length) * 100)
       : 0;
@@ -191,15 +186,6 @@ export function Dashboard() {
               <p>
                 <i />
                 لم تتم زيارتها <b>{pending}</b>
-              </p>
-              <p>
-                <i />
-                قيد التسجيل <b>{reserved}</b>
-              </p>
-              <p>
-                <i />
-                تحتاج مراجعة{" "}
-                <b>{s.exhibitions.filter((e) => e.needs_review).length}</b>
               </p>
             </div>
           </div>
@@ -454,12 +440,7 @@ export function Exhibitions() {
               onChange={(e) => setStatus(e.target.value)}
             >
               <option value="">جميع الحالات</option>
-              {[
-                "لم تتم الزيارة",
-                "قيد التسجيل",
-                "تمت الزيارة",
-                "يحتاج إلى مراجعة",
-              ].map((v) => (
+              {["لم تتم الزيارة", "تمت الزيارة"].map((v) => (
                 <option key={v}>{v}</option>
               ))}
             </select>
@@ -564,7 +545,7 @@ export function Exhibitions() {
                     p_id: edit.id,
                     p_name: edit.name,
                     p_organization: edit.organization,
-                    p_reviewed: !edit.needs_review,
+                    p_reviewed: true,
                   }),
                 )
               )
@@ -591,16 +572,7 @@ export function Exhibitions() {
                     }
                   />
                 </Field>
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={!edit.needs_review}
-                    onChange={(e) =>
-                      setEdit({ ...edit, needs_review: !e.target.checked })
-                    }
-                  />
-                  تمت مراجعة بيانات المعرض واعتمادها
-                </label>
+
                 <Submit busy={busy} />
               </>
             )}
@@ -608,11 +580,8 @@ export function Exhibitions() {
         </Modal>
       )}
       {reset && (
-        <Modal
-          title="تحرير الحجز أو السماح بزيارة إضافية"
-          onClose={() => setReset(null)}
-        >
-          <p>سيتم إلغاء الحجز الحالي، مع الاحتفاظ بكل الزيارات السابقة.</p>
+        <Modal title="السماح بزيارة إضافية" onClose={() => setReset(null)}>
+          <p>تبقى جميع الزيارات السابقة محفوظة عند السماح بزيارة إضافية.</p>
           <Form
             onSave={async () => {
               if (

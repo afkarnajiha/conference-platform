@@ -89,19 +89,13 @@ export function exhibitionStatus(
   reservations: Row[],
   now = Date.now(),
 ) {
-  if (ex.needs_review) return "يحتاج إلى مراجعة";
   if (
     visits.some(
       (v) => v.exhibition_id === ex.id && v.visit_round === ex.visit_round,
     )
   )
     return "تمت الزيارة";
-  if (
-    reservations.some(
-      (r) => r.exhibition_id === ex.id && Date.parse(r.expires_at) > now,
-    )
-  )
-    return "قيد التسجيل";
+
   return "لم تتم الزيارة";
 }
 export const mimeExtensions: Record<string, string> = {

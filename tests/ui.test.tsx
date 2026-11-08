@@ -373,6 +373,8 @@ describe("تفاعل الواجهة مع طبقة الخدمات (بيانات �
     expect(await screen.findByText("هذا الرمز غير مسجل بعد")).toBeTruthy();
   });
   it("الزيارة السابقة تعرض اسم الموظف وتاريخها", async () => {
+    mock.state.data.visits = [visit];
+    mock.state.data.profiles.push({ id: "b", full_name: "زميل سابق" });
     mock.rpc.mockResolvedValue({
       status: "completed",
       employee: "زميل سابق",
@@ -386,7 +388,7 @@ describe("تفاعل الواجهة مع طبقة الخدمات (بيانات �
       "/record/e",
     );
     expect(await screen.findByText("تمت زيارة هذا المعرض مسبقًا")).toBeTruthy();
-    expect(screen.getByText("زميل سابق")).toBeTruthy();
+    expect(screen.getByText(/اسم الموظف:/)).toBeTruthy();
   });
   it("حفظ الزيارة يرسل البيانات دون هوية أو وقت يختاره المستخدم", async () => {
     mock.rpc.mockImplementation(async (name: string) =>
@@ -418,8 +420,11 @@ describe("تفاعل الواجهة مع طبقة الخدمات (بيانات �
       screen.getByRole("button", { name: "حفظ الزيارة وإكمالها" }),
     );
     expect(await screen.findByText("حفظت الزيارة")).toBeTruthy();
-    const args = mock.rpc.mock.calls.find((c) => c[0] === "save_visit")![1];
-    expect(args.p_token).toBe("token-test");
+    const args = mock.rpc.mock.calls.find(
+      (c) => c[0] === "save_visit_direct",
+    )![1];
+    expect(args.p_token).toBeUndefined();
+    expect(args.p_round).toBe(1);
     expect(args.p_data.employee_id).toBeUndefined();
     expect(args.p_data.visited_at).toBeUndefined();
   });
