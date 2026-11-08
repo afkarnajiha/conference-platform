@@ -125,3 +125,17 @@ it("stops the batch at the first server error without automatically retrying", a
   await screen.findByText(/توقف الاستيراد عند أول خطأ/);
   expect(mocks.action).toHaveBeenCalledOnce();
 });
+
+it("creates password accounts without invites and retains successful credentials for export", async () => {
+  await choose();
+  fireEvent.change(screen.getByLabelText("طريقة إنشاء الحسابات"), {target:{value:"password"}});
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", {name:"إنشاء 1 حساب بكلمات مرور"}));
+  await screen.findByText("تم إنشاء الحساب بكلمة مرور دون بريد");
+  const payload=mocks.action.mock.calls[0][0];
+  expect(payload.creation_mode).toBe("password");
+  expect(payload.password.length).toBeGreaterThanOrEqual(20);
+  expect(payload.role).toBe("employee");
+  expect(screen.getByRole("button", {name:"تنزيل Excel لبيانات دخول 1 موظف"})).toBeTruthy();
+  expect((screen.getByLabelText("ملف الموظفين") as HTMLInputElement).disabled).toBe(true);
+});

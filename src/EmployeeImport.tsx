@@ -4,6 +4,12 @@ import { accountAction, errorText } from "./api";
 import { useStore } from "./store";
 import { readEmployees, type EmployeeImportRow } from "./employee-import";
 
+import { createWorkbook } from "./export-workbook";
+
+function newPassword() {
+  const bytes = crypto.getRandomValues(new Uint8Array(20));
+  return "Aa7!" + Array.from(bytes, b => "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"[b % 55]).join("");
+}
 export function EmployeeImport({ onClose }: { onClose: () => void }) {
   const s = useStore();
   const [rows, setRows] = useState<EmployeeImportRow[]>([]);
@@ -14,11 +20,27 @@ export function EmployeeImport({ onClose }: { onClose: () => void }) {
   const [confirmed, setConfirmed] = useState(false);
   const [started, setStarted] = useState(false);
   const [results, setResults] = useState<Record<number, string>>({});
+  const [mode, setMode] = useState("invite");
+  const [credentials, setCredentials] = useState<Record<string, string>[]>([]);
+  const [downloaded, setDownloaded] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const unsaved = useRef(false);
+  async function download() {
+    setExporting(true);
+    try {
+      const buffer = await createWorkbook("بيانات الدخول", credentials);
+      const url = URL.createObjectURL(new Blob([new Uint8Array(buffer)], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+      const a = document.createElement("a"); a.href=url; a.download="بيانات-دخول-الموظفين.xlsx";
+      a.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+      unsaved.current=false; setDownloaded(true);
+    } catch { setError("تعذر تنزيل الملف. أبقِ هذه النافذة مفتوحة وأعد التنزيل."); }
+    finally { setExporting(false); }
+  }
   const stop = useRef(false);
   const busy = useRef(false);
   useEffect(() => {
     const guard = (e: BeforeUnloadEvent) => {
-      if (busy.current) e.preventDefault();
+      if (busy.current || unsaved.current) e.preventDefault();
     };
     window.addEventListener("beforeunload", guard);
     return () => {
@@ -28,11 +50,12 @@ export function EmployeeImport({ onClose }: { onClose: () => void }) {
   }, []);
   const valid = rows.filter((row) => !row.error && !row.existing);
   async function select(file?: File) {
-    if (!file || busy.current) return;
+    if (!file || busy.current || unsaved.current) return;
     setError("");
     setReading(true);
     setRows([]);
     setResults({});
+    setCredentials([]);
     setStarted(false);
     setConfirmed(false);
     try {
@@ -65,8 +88,10 @@ export function EmployeeImport({ onClose }: { onClose: () => void }) {
         if (stop.current) break;
         setResults((prev) => ({ ...prev, [row.row]: "جارٍ إنشاء الحساب…" }));
         try {
+          const password = mode === "password" ? newPassword() : "";
           await accountAction({
             action: "create",
+            ...(mode === "password" ? {creation_mode:"password", password} : {}),
             full_name: row.full_name,
             email: row.email,
             job_title: row.job_title,
@@ -75,9 +100,13 @@ export function EmployeeImport({ onClose }: { onClose: () => void }) {
             manage_employees: false,
           });
           count++;
+          if (password) {
+            setCredentials(prev => [...prev, {"الاسم":row.full_name,"البريد الإلكتروني":row.email,"كلمة المرور":password}]);
+            unsaved.current=true; setDownloaded(false);
+          }
           setResults((prev) => ({
             ...prev,
-            [row.row]: "تم إنشاء الحساب وطلب إرسال الدعوة",
+            [row.row]: mode === "password" ? "تم إنشاء الحساب بكلمة مرور دون بريد" : "تم إنشاء الحساب وطلب إرسال الدعوة",
           }));
         } catch (e) {
           setResults((prev) => ({ ...prev, [row.row]: errorText(e) }));
@@ -98,7 +127,8 @@ export function EmployeeImport({ onClose }: { onClose: () => void }) {
     <Modal
       title="استيراد الموظفين من Excel"
       onClose={() => {
-        if (!busy.current && !reading) onClose();
+        if (!busy.current && !reading && !unsaved.current) onClose();
+        else if (unsaved.current) setError("نزّل بيانات الدخول قبل إغلاق النافذة.");
       }}
     >
       <p className="help">
@@ -111,7 +141,7 @@ export function EmployeeImport({ onClose }: { onClose: () => void }) {
         <input
           type="file"
           accept=".xlsx"
-          disabled={running || reading}
+          disabled={running || reading || !downloaded}
           onChange={(e) => {
             const file = e.target.files?.[0];
             e.target.value = "";
@@ -119,6 +149,14 @@ export function EmployeeImport({ onClose }: { onClose: () => void }) {
           }}
         />
       </label>
+      <label className="field"><span>طريقة إنشاء الحسابات</span>
+        <select value={mode} disabled={running || started} onChange={e => {setMode(e.target.value); setConfirmed(false);}}>
+          <option value="invite">إرسال دعوات بريدية</option>
+          <option value="password">كلمات مرور فريدة دون إرسال بريد</option>
+        </select>
+      </label>
+      {mode === "password" && <p className="help">تُنشأ كلمة مرور عشوائية مستقلة لكل موظف ويُفعّل بريده إداريًا. نزّل ملف الدخول قبل الإغلاق، وشارك كل موظف بياناته فقط. الحسابات الموجودة لا تتغير.</p>}
+      {credentials.length > 0 && <button className="button primary" disabled={running || exporting} onClick={() => void download()}>تنزيل Excel لبيانات دخول {credentials.length} موظف</button>}
       {reading && <p role="status">جارٍ قراءة الملف وفحص البيانات…</p>}
       {error && (
         <div className="alert" role="alert">
@@ -167,8 +205,7 @@ export function EmployeeImport({ onClose }: { onClose: () => void }) {
               disabled={running || started}
               onChange={(e) => setConfirmed(e.target.checked)}
             />
-            راجعت القائمة وأوافق على إنشاء الحسابات الصالحة وإرسال دعوات إلى
-            بريدها.
+            {mode === "password" ? "راجعت القائمة وأوافق على إنشاء الحسابات وتفعيل البريد بكلمات مرور دون دعوات." : "راجعت القائمة وأوافق على إنشاء الحسابات الصالحة وإرسال دعوات إلى بريدها."}
           </label>
           <div className="actions">
             <button
@@ -178,7 +215,7 @@ export function EmployeeImport({ onClose }: { onClose: () => void }) {
             >
               {running
                 ? "جارٍ الاستيراد…"
-                : `إنشاء ${valid.length} حساب وإرسال الدعوات`}
+                : mode === "password" ? `إنشاء ${valid.length} حساب بكلمات مرور` : `إنشاء ${valid.length} حساب وإرسال الدعوات`}
             </button>
             {running && (
               <button

@@ -116,10 +116,16 @@ Deno.serve(async (req: Request) => {
     let id = target?.id,
       created = false;
     if (body.action === "create") {
-      const { data, error } = await service.auth.admin.inviteUserByEmail(
-        body.email.trim().toLowerCase(),
-        { redirectTo },
-      );
+      const direct = body.creation_mode === "password";
+      if (body.creation_mode && !["password", "invite"].includes(body.creation_mode))
+        return reply(400, { error: "طريقة إنشاء الحساب غير صحيحة." });
+      if (direct && (typeof body.password !== "string" || body.password.length < 12 || body.password.length > 128))
+        return reply(400, { error: "كلمة المرور يجب أن تكون بين 12 و128 حرفًا." });
+      const { data, error } = direct
+        ? await service.auth.admin.createUser({
+            email: body.email.trim().toLowerCase(), password: body.password, email_confirm: true,
+          })
+        : await service.auth.admin.inviteUserByEmail(body.email.trim().toLowerCase(), { redirectTo });
       if (error) throw error;
       id = data.user.id;
       created = true;
@@ -141,8 +147,18 @@ Deno.serve(async (req: Request) => {
     }
     return reply(200, { ok: true, id });
   } catch (e) {
-    const error = e as { message?: string; code?: string };
+    const error = (e ?? {}) as { message?: string; code?: string; status?: number };
     let message = "تعذر تنفيذ العملية. تحقق من الإعدادات ثم حاول مجددًا.";
+    if (error.code === "over_email_send_rate_limit")
+      message = "تم بلوغ حد إرسال رسائل البريد في Supabase. اضبط SMTP وحدود الإرسال قبل استكمال الدعوات. الحسابات الناجحة باقية.";
+    else if (error.status === 429)
+      message = "تم بلوغ حد الطلبات المسموح به مؤقتًا. انتظر قبل المحاولة مجددًا وراجع حدود المصادقة والإرسال.";
+    else if (error.code === "email_address_not_authorized")
+      message = "خدمة البريد الحالية لا تسمح بإرسال الدعوة لهذا العنوان. يلزم إعداد SMTP مخصص لإرسال الدعوات للموظفين.";
+    else if (error.code === "email_address_invalid")
+      message = "رفضت خدمة المصادقة عنوان البريد الإلكتروني. تحقق من صحة العنوان.";
+    else if (/error sending|smtp/i.test(error.message ?? ""))
+      message = "تعذر إرسال رسالة الدعوة أو الاستعادة. راجع إعدادات SMTP وسجل أخطاء المصادقة في Supabase.";
     if (error.code === "23503")
       message =
         "الحساب مرتبط بسجلات سابقة. استخدم تعطيل الحساب للحفاظ على التاريخ.";
@@ -155,6 +171,12 @@ Deno.serve(async (req: Request) => {
     if (error.message?.includes("PROFILE_REMOVED_AUTH_REMAINS"))
       message =
         "أزيل وصول الحساب، لكن حذف هوية الدخول يحتاج مراجعة المسؤول في Supabase.";
-    return reply(400, { error: message });
+    // Log only a bounded diagnostic code, never email addresses, tokens or raw errors.
+    const diagnosticCode = typeof error.code === "string" && /^[a-zA-Z0-9_]{1,80}$/.test(error.code)
+      ? error.code : "UNKNOWN";
+    console.error("manage-account failure", { code: diagnosticCode });
+    return reply(error.status === 429 ? 429 : 400, {
+      error: `${message} (رمز التشخيص: ${diagnosticCode})`,
+    });
   }
 });
